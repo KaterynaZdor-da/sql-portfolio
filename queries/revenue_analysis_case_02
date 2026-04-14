@@ -1,0 +1,34 @@
+/*
+--------------------------------------------------------------------------------
+BUSINESS CASE: Monthly Cost Allocation Analysis
+--------------------------------------------------------------------------------
+CONTEXT: 
+The Marketing and Finance departments review historical spending to better 
+allocate future budgets. 
+
+PROBLEM: 
+Looking at total monthly spend (e.g., "$5,000 in January") doesn't immediately 
+show the relative weight of that month in the overall annual or period budget. 
+Management needs to know which months consume the largest share of resources.
+
+OBJECTIVE: 
+Calculate the percentage of spending for each month relative to the total 
+expenditure for the entire period. This allows the team to identify high-spend 
+seasons and normalize budget expectations.
+
+TECH SKILLS: Window Functions (SUM OVER), Subqueries, Date Formatting.
+--------------------------------------------------------------------------------
+*/
+
+SELECT
+    month_date,
+    -- Using a Window Function to calculate the percentage share of the grand total
+    ROUND(cost_by_month / SUM(cost_by_month) OVER() * 100, 2) AS total_month_cost_percent
+FROM (
+    SELECT
+        DATE(EXTRACT(YEAR FROM date), EXTRACT(MONTH FROM date), 1) AS month_date,
+        SUM(cost) AS cost_by_month
+    FROM `DA.paid_search_cost`
+    GROUP BY 1
+) AS cost_month
+ORDER BY month_date DESC;
