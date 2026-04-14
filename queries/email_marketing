@@ -1,0 +1,38 @@
+/*
+--------------------------------------------------------------------------------
+BUSINESS CASE: Ranking of Sent Emails (Customer Engagement History)
+--------------------------------------------------------------------------------
+CONTEXT: 
+The CRM team tracks email communications with accounts to analyze the frequency 
+and recency of customer touchpoints.
+
+PROBLEM: 
+An account might receive multiple emails within a single day. When analyzing 
+engagement history, we need to focus on "contact days" rather than individual 
+messages. Standard ranking functions might skip numbers or treat each email 
+separately, which obscures the chronological order of contact days.
+
+OBJECTIVE: 
+Rank the days on which emails were sent for each account, from the most recent 
+(Rank 1) to the oldest. Ensure that multiple emails sent on the same day share 
+the same rank (1 day = 1 rank) using DENSE_RANK.
+
+TECH SKILLS: DENSE_RANK(), Window Functions, Subqueries, Date Arithmetic.
+--------------------------------------------------------------------------------
+*/
+
+SELECT
+    id_account AS account_id,
+    sent_date,
+    -- DENSE_RANK ensures that multiple emails on the same day get the same rank
+    DENSE_RANK() OVER(PARTITION BY id_account ORDER BY sent_date DESC) AS sent_day_rank
+FROM (
+    SELECT
+        id_account,
+        -- Calculating the actual sent date by adding the interval to the session date
+        DATE_ADD(s.date, INTERVAL es.sent_date DAY) AS sent_date
+    FROM `DA.email_sent` AS es
+    JOIN `DA.account_session` AS ase ON es.id_account = ase.account_id
+    JOIN `DA.session` AS s USING (ga_session_id)
+    GROUP BY sent_date, id_account
+) AS subquery;
