@@ -1,0 +1,71 @@
+/*
+--------------------------------------------------------------------------------
+BUSINESS CASE: Global Revenue Performance & User Profile Analysis
+--------------------------------------------------------------------------------
+CONTEXT: 
+The company operates globally and needs a high-level overview of regional 
+performance to optimize marketing strategies and platform development.
+
+PROBLEM: 
+Looking at total revenue in isolation doesn't explain "how" or "where" the money 
+is made. We don't know if a continent is mobile-first or desktop-first, 
+nor do we know if high traffic (sessions) correlates with high-quality 
+verified accounts.
+
+OBJECTIVE: 
+Create a comprehensive regional report that:
+1. Breaks down revenue by continent and device type (Mobile vs. Desktop).
+2. Calculates the market share (% of total revenue) for each continent.
+3. Correlates financial data with user activity (sessions) and trust metrics 
+   (verified accounts).
+
+TECH SKILLS: Multiple CTEs, Conditional Aggregation (CASE WHEN), 
+             Window Functions (SUM OVER), Complex Joins.
+--------------------------------------------------------------------------------
+*/
+
+WITH account_cnt AS (
+    SELECT
+        continent,
+        COUNT(id) AS account_count,
+        SUM(CASE WHEN is_verified = 1 THEN 1 ELSE 0 END) AS verified_account
+    FROM `DA.account` a
+    JOIN `DA.account_session` ac ON a.id = ac.account_id
+    JOIN `DA.session_params` sp USING(ga_session_id)
+    GROUP BY continent
+),
+
+count_session AS (
+    SELECT
+        continent,
+        COUNT(ga_session_id) AS count_session
+    FROM `DA.session_params` sp
+    GROUP BY continent
+),
+
+price_by_continent AS (
+    SELECT
+        continent,
+        SUM(price) AS country_price,
+        SUM(CASE WHEN device = 'mobile' THEN price ELSE 0 END) AS Revenue_from_Mobile,
+        SUM(CASE WHEN device = 'desktop' THEN price ELSE 0 END) AS Revenue_from_Desktop
+    FROM `DA.order` o
+    JOIN `DA.product` p USING(item_id)
+    JOIN `DA.session_params` s ON o.ga_session_id = s.ga_session_id
+    GROUP BY continent
+)
+
+SELECT 
+    pc.continent,
+    country_price AS revenue,
+    Revenue_from_Mobile,
+    Revenue_from_Desktop,
+    -- Market share calculation using Window Function
+    ROUND(country_price / SUM(country_price) OVER() * 100, 2) AS percent_revenue_from_total,
+    account_count,
+    verified_account,
+    count_session
+FROM price_by_continent pc
+JOIN account_cnt acnt ON pc.continent = acnt.continent
+JOIN count_session cs ON acnt.continent = cs.continent
+ORDER BY revenue DESC;
