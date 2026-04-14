@@ -1,0 +1,66 @@
+/*
+--------------------------------------------------------------------------------
+PROJECT: User Retention Analysis (Cohort Study)
+--------------------------------------------------------------------------------
+CONTEXT: 
+Understanding user loyalty is critical for e-commerce growth. We need to track 
+if users who registered in a specific month continue to interact with the 
+platform in subsequent months.
+
+PROBLEM: 
+High registration numbers can be a "vanity metric" if those users never return. 
+We need to measure the Retention Rate to evaluate the long-term value of 
+newly acquired users.
+
+OBJECTIVE: 
+Identify the cohort of users who joined in January 2020 and calculate how many 
+of them returned to the platform in Month 1 (February), Month 2 (March), and so on.
+
+TECH SKILLS: CTEs, Window Functions (MIN OVER), Date Diff, Aggregation.
+--------------------------------------------------------------------------------
+*/
+
+WITH user_first_touch AS (
+    -- Step 1: Find the registration (first session) month for each user
+    SELECT 
+        account_id,
+        DATE_TRUNC(MIN(s.date), MONTH) AS cohort_month
+    FROM `DA.account_session` ac
+    JOIN `DA.session` s USING(ga_session_id)
+    GROUP BY 1
+),
+
+user_activity AS (
+    -- Step 2: Get all unique months where a user had activity
+    SELECT DISTINCT
+        ac.account_id,
+        DATE_TRUNC(s.date, MONTH) AS activity_month
+    FROM `DA.account_session` ac
+    JOIN `DA.session` s USING(ga_session_id)
+),
+
+cohort_retention AS (
+    -- Step 3: Combine first touch and activity to calculate month difference
+    SELECT
+        f.cohort_month,
+        f.account_id,
+        DATE_DIFF(a.activity_month, f.cohort_month, MONTH) AS month_number
+    FROM user_first_touch f
+    JOIN user_activity a ON f.account_id = a.account_id
+    WHERE f.cohort_month = '2020-01-01' -- Filtering for the January 2020 Cohort
+)
+
+-- Step 4: Final count of returning users by month index
+SELECT
+    cohort_month,
+    month_number,
+    COUNT(DISTINCT account_id) AS active_users_count,
+    -- Calculate retention % relative to the starting size of the cohort
+    ROUND(
+        COUNT(DISTINCT account_id) / 
+        FIRST_VALUE(COUNT(DISTINCT account_id)) OVER(ORDER BY month_number) * 100, 
+        2
+    ) AS retention_rate_pct
+FROM cohort_retention
+GROUP BY 1, 2
+ORDER BY month_number;
