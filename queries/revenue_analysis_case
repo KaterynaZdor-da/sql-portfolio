@@ -1,0 +1,50 @@
+/*
+--------------------------------------------------------------------------------
+BUSINESS CASE: Monthly Revenue and Marketing Cost Consolidation
+--------------------------------------------------------------------------------
+CONTEXT: 
+The Finance and Marketing teams need to monitor the company's profitability 
+by comparing monthly revenue against advertising expenditures.
+
+PROBLEM: 
+Financial data is siloed. Sales data (revenue) is stored in the orders database, 
+while marketing spend (costs) is tracked in a separate paid search table. 
+This separation makes it difficult to see the "big picture" of monthly net 
+performance.
+
+OBJECTIVE: 
+Consolidate revenue and cost data into a single unified report using UNION ALL. 
+Group the results by year and month to enable year-over-year (YoY) and 
+month-over-month (MoM) trend analysis.
+
+TECH SKILLS: UNION ALL, CTEs (or Subqueries), Date Extraction (EXTRACT), 
+             Data Consolidation, Joins.
+--------------------------------------------------------------------------------
+*/
+
+SELECT
+    EXTRACT(YEAR FROM date) AS year,
+    EXTRACT(MONTH FROM date) AS month,
+    SUM(revenue) AS revenue,
+    SUM(cost) AS cost
+FROM (
+    -- Section 1: Extracting Revenue from Sales Data
+    SELECT
+        date AS date,
+        p.price AS revenue,
+        0 AS cost
+    FROM `DA.product` p
+    JOIN `DA.order` o ON p.item_id = o.item_id
+    JOIN `DA.session` s ON o.ga_session_id = s.ga_session_id
+
+    UNION ALL
+
+    -- Section 2: Extracting Costs from Marketing Data
+    SELECT
+        date AS date,
+        0 AS revenue,
+        psc.cost AS cost
+    FROM `DA.paid_search_cost` psc
+)
+GROUP BY 1, 2
+ORDER BY year DESC, month DESC;
