@@ -1,0 +1,115 @@
+/*
+--------------------------------------------------------------------------------
+PROJECT: Integrated User Lifecycle & Email Marketing Performance
+--------------------------------------------------------------------------------
+CONTEXT: 
+An international e-commerce platform requires a synchronized dataset to evaluate 
+regional performance and the efficiency of digital communication channels.
+
+PROBLEM: 
+Data regarding user growth and marketing interaction (email funnels) are 
+traditionally stored in separate systems. This isolation prevents the business 
+from understanding how account verification or subscription status impacts 
+long-term engagement across different global markets.
+
+OBJECTIVE: 
+Develop a robust data architecture to:
+1. Harmonize account registration trends with the full email funnel (Sent -> Open -> Visit).
+2. Segment user behavior by verification level, subscription status, and activity frequency.
+3. Automatically identify and prioritize the Top 10 global markets by volume and engagement.
+
+TECH SKILLS: Data Architecture, UNION ALL, Window Functions (DENSE_RANK, PARTITION BY), 
+             Advanced Joins, View Layer for BI (Looker Studio/Tableau).
+--------------------------------------------------------------------------------
+*/
+
+CREATE OR REPLACE VIEW `Students.ZDOR_mssg_performance_view` AS (
+ WITH ac_cnt AS (
+     -- Aggregate account registration metrics by region
+     SELECT
+       COUNT(DISTINCT a.id) AS account_cnt,
+       a.send_interval,
+       a.is_verified,
+       a.is_unsubscribed,
+       date,
+       country
+     FROM `DA.account` a
+     JOIN `DA.account_session` ac ON a.id = ac.account_id
+     JOIN `DA.session` s ON ac.ga_session_id = s.ga_session_id
+     JOIN `DA.session_params` sp ON s.ga_session_id = sp.ga_session_id
+     GROUP BY country, a.send_interval, a.is_verified, a.is_unsubscribed, date
+ ),
+
+ msg_sent AS (
+     -- Calculate multi-stage email funnel (Conversion metrics)
+     SELECT
+       DATE_ADD(s.date, INTERVAL es.sent_date DAY) AS date_mssg,
+       country,
+       send_interval,
+       is_verified,
+       is_unsubscribed,
+       COUNT(DISTINCT es.id_message) AS sent_mssg,
+       COUNT(DISTINCT eo.id_message) AS open_mssg,
+       COUNT(DISTINCT ev.id_message) AS visit_mssg
+     FROM `DA.email_sent` es
+     LEFT JOIN `DA.email_open` eo ON es.id_message = eo.id_message
+     LEFT JOIN `DA.email_visit` ev ON es.id_message = ev.id_message
+     JOIN `DA.account` a ON es.id_account = a.id
+     JOIN `DA.account_session` acs ON a.id = acs.account_id
+     JOIN `DA.session` s ON acs.ga_session_id = s.ga_session_id
+     JOIN `DA.session_params` sp ON s.ga_session_id = sp.ga_session_id
+     GROUP BY 1, 2, 3, 4, 5
+ ),
+
+ union_all AS (
+     -- Data consolidation for unified timeline reporting
+     SELECT
+       date_mssg AS date_m, country, send_interval, is_verified, is_unsubscribed,
+       0 AS account_cnt, sent_mssg, open_mssg, visit_mssg
+     FROM msg_sent
+     UNION ALL
+     SELECT
+       date AS date_m, country, send_interval, is_verified, is_unsubscribed,
+       account_cnt, 0 AS sent_mssg, 0 AS open_mssg, 0 AS visit_mssg
+     FROM ac_cnt
+ ),
+
+ sum_union_all AS (
+     -- Core aggregation for the final unified dataset
+     SELECT
+       date_m, country, send_interval, is_verified, is_unsubscribed,
+       SUM(account_cnt) AS s_account_cnt,
+       SUM(sent_mssg) AS s_sent_mssg,
+       SUM(open_mssg) AS s_open_mssg,
+       SUM(visit_mssg) AS s_visit_mssg
+     FROM union_all
+     GROUP BY 1, 2, 3, 4, 5
+ ),
+
+ total_union AS (
+     -- Compute regional KPIs for market prioritization
+     SELECT
+       *,
+       SUM(s_account_cnt) OVER (PARTITION BY country) AS total_country_account_cnt,
+       SUM(s_sent_mssg) OVER (PARTITION BY country) AS total_country_sent_cnt
+     FROM sum_union_all
+ ),
+
+ rank_total_union AS (
+     -- Dynamic ranking of the Top 10 markets by volume
+     SELECT
+       *,
+       DENSE_RANK() OVER (ORDER BY total_country_account_cnt DESC) AS rank_account,
+       DENSE_RANK() OVER (ORDER BY total_country_sent_cnt DESC) AS rank_sent
+     FROM total_union
+ )
+
+ -- Final output filtered for strategic market segments
+ SELECT
+   date_m, country, send_interval, is_verified, is_unsubscribed,
+   s_account_cnt, s_sent_mssg, s_open_mssg, s_visit_mssg,
+   total_country_account_cnt, total_country_sent_cnt,
+   rank_sent, rank_account
+ FROM rank_total_union
+ WHERE rank_sent <= 10 OR rank_account <= 10
+);
