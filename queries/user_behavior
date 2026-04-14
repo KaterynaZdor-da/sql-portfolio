@@ -1,0 +1,40 @@
+/*
+--------------------------------------------------------------------------------
+BUSINESS CASE: Monthly Expense Distribution Analysis
+--------------------------------------------------------------------------------
+CONTEXT: 
+The Finance Department is conducting a budget audit to evaluate spending patterns 
+over the fiscal year.
+
+PROBLEM: 
+Looking at absolute monthly spending figures alone doesn't provide enough insight 
+into seasonality. Without a relative benchmark, it is difficult to determine 
+if a specific month’s spending is an outlier or a standard portion of the budget.
+
+OBJECTIVE: 
+Calculate the percentage share of each month's expenses relative to the total 
+expenditure for the entire period. This helps identify peak spending months 
+and improve future cash flow forecasting.
+
+TECH SKILLS: Window Functions (SUM OVER), CTEs, Data Aggregation.
+--------------------------------------------------------------------------------
+*/
+
+WITH monthly_totals AS (
+    SELECT 
+        DATE_TRUNC(expense_date, MONTH) AS report_month,
+        SUM(amount) AS monthly_amount
+    FROM `your_project.your_dataset.expenses`
+    GROUP BY 1
+)
+
+SELECT 
+    report_month,
+    monthly_amount,
+    -- Using Window Function to get the grand total for percentage calculation
+    ROUND(
+        monthly_amount / SUM(monthly_amount) OVER() * 100, 
+        2
+    ) AS pct_of_total_spend
+FROM monthly_totals
+ORDER BY report_month;
