@@ -1,0 +1,65 @@
+/*
+--------------------------------------------------------------------------------
+BUSINESS CASE: Email Communication Share & Activity Window
+--------------------------------------------------------------------------------
+CONTEXT: 
+The Marketing Analytics team tracks the distribution of outbound communications 
+to ensure balanced engagement across the customer base.
+
+PROBLEM: 
+Counting total emails doesn't show if specific accounts are being over-targeted 
+or neglected relative to others in a given month. Additionally, we need to 
+know the "activity window" (first and last contact) for each account to 
+understand their engagement cycle.
+
+OBJECTIVE: 
+1. Calculate the percentage share of emails sent to each account out of the 
+   total emails sent that month.
+2. Identify the first and last contact dates for each account within the month.
+
+TECH SKILLS: Multiple CTEs (Common Table Expressions), Date Manipulation 
+             (EXTRACT, DATE_ADD), Joins, Multi-level Aggregation.
+--------------------------------------------------------------------------------
+*/
+
+WITH other AS (
+    SELECT
+        DATE(
+            EXTRACT(YEAR FROM DATE_ADD(date, INTERVAL sent_date DAY)),
+            EXTRACT(MONTH FROM DATE_ADD(date, INTERVAL sent_date DAY)), 
+            1
+        ) AS sent_month,
+        account_id,
+        COUNT(DISTINCT id_message) AS person_msg,
+        MIN(DATE_ADD(date, INTERVAL sent_date DAY)) AS first_sent_date,
+        MAX(DATE_ADD(date, INTERVAL sent_date DAY)) AS last_sent_date
+    FROM `DA.email_sent` es
+    JOIN `DA.account_session` ac ON es.id_account = ac.account_id
+    JOIN `DA.session` s USING (ga_session_id)
+    GROUP BY 1, 2
+),
+
+total_msg AS (
+    SELECT
+        DATE(
+            EXTRACT(YEAR FROM DATE_ADD(date, INTERVAL sent_date DAY)),
+            EXTRACT(MONTH FROM DATE_ADD(date, INTERVAL sent_date DAY)), 
+            1
+        ) AS sent_month,
+        COUNT(id_message) AS total_msg
+    FROM `DA.email_sent` es
+    JOIN `DA.account_session` ac ON es.id_account = ac.account_id
+    JOIN `DA.session` s USING (ga_session_id)
+    GROUP BY 1
+)
+
+SELECT
+    o.sent_month,
+    o.account_id,
+    -- Calculating the percentage share of emails for this account in the specific month
+    ROUND(o.person_msg / t.total_msg * 100, 2) AS sent_msg_percent_from_this_month,
+    o.first_sent_date,
+    o.last_sent_date
+FROM other o
+JOIN total_msg t ON o.sent_month = t.sent_month
+ORDER BY o.sent_month DESC, sent_msg_percent_from_this_month DESC;
