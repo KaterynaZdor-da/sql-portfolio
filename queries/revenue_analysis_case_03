@@ -1,0 +1,65 @@
+/*
+--------------------------------------------------------------------------------
+BUSINESS CASE: Cumulative Prediction Fulfillment (Actual vs. Target)
+--------------------------------------------------------------------------------
+CONTEXT: 
+The Strategic Planning team sets daily revenue targets (predictions). To assess 
+performance, they need to compare real-time sales against these goals.
+
+PROBLEM: 
+Daily fluctuations in sales can be misleading. A single bad day doesn't mean 
+the monthly goal will be missed, and a single good day doesn't guarantee success. 
+Looking at isolated daily figures makes it hard to see the overall trend toward 
+the target.
+
+OBJECTIVE: 
+Calculate the cumulative (running total) revenue and cumulative targets by day. 
+Then, determine the percentage of fulfillment to visualize whether the company 
+is catching up to or falling behind the predicted plan.
+
+TECH SKILLS: UNION ALL, Multiple CTEs, Window Functions (Running Totals), 
+             Mathematical Transformations.
+--------------------------------------------------------------------------------
+*/
+
+WITH price_predict AS (
+    -- Combining actual revenue and predicted targets into a single dataset
+    SELECT
+        date,
+        p.price AS price,
+        0 AS predict
+    FROM `DA.order` o
+    JOIN `DA.product` p ON o.item_id = p.item_id
+    JOIN `DA.session` s USING(ga_session_id)
+
+    UNION ALL
+
+    SELECT 
+        date,
+        0 AS price,
+        predict
+    FROM `DA.revenue_predict`
+),
+
+sum_pr AS (
+    -- Aggregating figures by date to prepare for cumulative calculation
+    SELECT
+        date,
+        SUM(price) AS sum_price,
+        SUM(predict) AS sum_predict
+    FROM price_predict
+    GROUP BY date
+)
+
+SELECT
+    date,
+    -- Calculating Running Totals for both Prediction and Actual Revenue
+    SUM(sum_predict) OVER(ORDER BY date) AS cumulative_predict,
+    SUM(sum_price) OVER(ORDER BY date) AS cumulative_revenue,
+    -- Calculating fulfillment percentage of the cumulative plan
+    ROUND(
+        SUM(sum_price) OVER(ORDER BY date) / NULLIF(SUM(sum_predict) OVER(ORDER BY date), 0) * 100, 
+        2
+    ) AS fulfillment_pct
+FROM sum_pr
+ORDER BY date;
